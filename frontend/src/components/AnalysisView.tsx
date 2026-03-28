@@ -58,7 +58,7 @@ export default function AnalysisView({ config, onComplete, onEditSetup }: Props)
       <div className="mb-8 text-center">
         <h1 className="text-2xl font-bold text-slate-800 mb-2">Analyze Class Writing</h1>
         <p className="text-slate-500 text-sm">
-          WriteSight will read your Notion database and generate personalized, CCSS-aligned
+          WriteRight will read your Notion database and generate personalized, CCSS-aligned
           teaching points for each student.
         </p>
       </div>
@@ -87,13 +87,13 @@ export default function AnalysisView({ config, onComplete, onEditSetup }: Props)
         </button>
       </div>
 
-      {/* What WriteSight does */}
+      {/* What WriteRight does */}
       {status === 'idle' && (
         <div className="card mb-6">
           <h2 className="text-sm font-semibold text-slate-600 mb-4 uppercase tracking-wide">What happens next</h2>
           <ol className="space-y-3">
             {[
-              'WriteSight fetches each student\'s writing entry from your Notion database.',
+              'WriteRight fetches each student\'s writing entry from your Notion database.',
               `Each sample is evaluated against ${gradeLabel} CCSS writing and language standards.`,
               'The AI identifies 2–3 specific, actionable teaching points per student.',
               'Students are clustered into small groups based on shared instructional needs.',

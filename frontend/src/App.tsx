@@ -72,7 +72,7 @@ export default function App() {
               <PenIcon />
             </div>
             <div>
-              <span className="text-lg font-bold text-brand-700 tracking-tight">WriteSight</span>
+              <span className="text-lg font-bold text-brand-700 tracking-tight">WriteRight</span>
               <span className="hidden sm:inline ml-2 text-xs font-medium text-slate-400 uppercase tracking-wider">
                 AI Writing Differentiation
               </span>
@@ -119,7 +119,7 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-4">
         <p className="text-center text-xs text-slate-400">
-          WriteSight &mdash; built for teachers, powered by AI &bull; CCSS-aligned feedback
+          WriteRight &mdash; built for teachers, powered by AI &bull; CCSS-aligned feedback
         </p>
       </footer>
     </div>

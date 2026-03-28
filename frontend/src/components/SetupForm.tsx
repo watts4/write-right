@@ -50,7 +50,7 @@ export default function SetupForm({ initialConfig, onSave }: Props) {
       <div className="mb-8 text-center">
         <h1 className="text-2xl font-bold text-slate-800 mb-2">Connect your Notion classroom</h1>
         <p className="text-slate-500 text-sm leading-relaxed">
-          WriteSight reads student writing samples from a Notion database and uses AI to surface
+          WriteRight reads student writing samples from a Notion database and uses AI to surface
           targeted, standards-aligned teaching points — so you can plan small-group instruction in
           minutes, not hours.
         </p>
