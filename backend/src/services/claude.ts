@@ -6,7 +6,6 @@ import * as net from 'net';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import { CCSS_WRITING_STANDARDS } from './standards';
-import { saveResultsToNotion } from './notion';
 import { AnalysisResult } from '../types';
 
 const anthropic = new Anthropic();
@@ -206,14 +205,6 @@ export async function analyzeWritingViaMCP(
     analyzedAt: new Date().toLocaleString(),
     ...analysis,
   };
-
-  // Phase 3: Write results back to Notion via REST API (reliable batch write)
-  try {
-    result.notionPageUrl = await saveResultsToNotion(notionToken, databaseId, result);
-  } catch (err: any) {
-    console.error('Failed to save results to Notion:', err.message);
-    // Non-fatal — results still display in the UI
-  }
 
   return result;
 }
