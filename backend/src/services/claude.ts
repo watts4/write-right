@@ -1,88 +1,177 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { spawn } from 'child_process';
+import * as net from 'net';
+import * as crypto from 'crypto';
+import * as path from 'path';
 import { CCSS_WRITING_STANDARDS } from './standards';
 import { AnalysisResult } from '../types';
 
-const client = new Anthropic();
+const anthropic = new Anthropic();
+
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.listen(0, '127.0.0.1', () => {
+      const port = (server.address() as net.AddressInfo).port;
+      server.close(() => resolve(port));
+    });
+    server.on('error', reject);
+  });
+}
+
+function waitForPort(port: number, retries = 20, delay = 300): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const attempt = (remaining: number) => {
+      const sock = net.createConnection({ port, host: '127.0.0.1' });
+      sock.on('connect', () => { sock.destroy(); resolve(); });
+      sock.on('error', () => {
+        if (remaining <= 0) return reject(new Error(`MCP server did not start on port ${port}`));
+        setTimeout(() => attempt(remaining - 1), delay);
+      });
+    };
+    attempt(retries);
+  });
+}
 
 export async function analyzeWritingViaMCP(
-  notionAccessToken: string,
+  notionToken: string,
   databaseId: string,
   gradeLevel: string
 ): Promise<AnalysisResult> {
-  const standards = CCSS_WRITING_STANDARDS[gradeLevel] || CCSS_WRITING_STANDARDS['3'];
-  const standardsText = standards.map(s => `${s.code}: ${s.description}`).join('\n');
+  const port = await getFreePort();
+  const authToken = crypto.randomUUID();
+  const binPath = path.resolve(__dirname, '../../node_modules/.bin/notion-mcp-server');
 
-  const prompt = `You are WriteRight, an expert K-8 literacy coach. Your job is to analyze student writing samples stored in a Notion database and produce individualized teaching recommendations.
+  // Spawn the official Notion MCP server as a subprocess
+  const mcpProcess = spawn(binPath, ['--transport', 'http', '--port', String(port)], {
+    env: {
+      ...process.env,
+      NOTION_TOKEN: notionToken,
+      AUTH_TOKEN: authToken,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 
-**Grade Level:** ${gradeLevel}
+  mcpProcess.stderr?.on('data', (d) => process.stderr.write(`[notion-mcp] ${d}`));
 
-**California Common Core Writing and Language Standards for Grade ${gradeLevel}:**
+  try {
+    // Wait for MCP server to be ready
+    await waitForPort(port);
+
+    // Connect MCP client
+    const mcpClient = new Client({ name: 'write-right', version: '1.0.0' }, { capabilities: {} });
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${port}/mcp`),
+      { requestInit: { headers: { Authorization: `Bearer ${authToken}` } } }
+    );
+    await mcpClient.connect(transport);
+
+    // Get available tools and convert to Anthropic tool format
+    const { tools: mcpTools } = await mcpClient.listTools();
+    const anthropicTools: Anthropic.Tool[] = mcpTools.map(t => ({
+      name: t.name,
+      description: t.description || t.name,
+      input_schema: t.inputSchema as Anthropic.Tool['input_schema'],
+    }));
+
+    const standards = CCSS_WRITING_STANDARDS[gradeLevel] || CCSS_WRITING_STANDARDS['3'];
+    const standardsText = standards.map(s => `${s.code}: ${s.description}`).join('\n');
+
+    const prompt = `You are WriteRight, an expert K-8 literacy coach. Use the Notion tools available to you to complete this task.
+
+**Steps:**
+1. Query the Notion database with ID \`${databaseId}\` to list all pages (each page is one student's writing sample).
+2. For each page, retrieve the full page content to read the student's writing. Use the page title as the student name.
+3. Analyze each student's writing ONLY against these Grade ${gradeLevel} California CCSS standards:
 ${standardsText}
+4. Create a new page in the same database (title: "WriteRight Analysis — Grade ${gradeLevel} — ${new Date().toLocaleDateString()}") with the full results formatted clearly.
+5. Return the analysis as a JSON object — nothing else, no commentary:
 
-**Your task — use the Notion tools to complete these steps:**
-
-1. Query the Notion database (ID: ${databaseId}) to list all student pages.
-2. For each page, retrieve its full content to read the student's writing sample. Use the page title as the student's name.
-3. Analyze each student's writing ONLY against the grade-level standards listed above. Do not apply standards from other grade levels.
-4. For each student, identify:
-   - 2-3 specific, actionable teaching points tied to named standards (e.g. "W.3.1: Strengthen opinion claim — Marcus states 'I like dogs' but doesn't present a clear argument")
-   - 1-2 genuine strengths
-   - Which standard codes are most relevant
-5. Group students by shared instructional need for small group instruction.
-6. Create a new page in the database titled "WriteRight Analysis — Grade ${gradeLevel} — [today's date]" with the full analysis formatted clearly. Include per-student sections and a small group recommendations section.
-
-After completing all steps, return a JSON summary in this exact format (and only this JSON, no other text):
 {
   "students": [
     {
       "studentName": "string",
-      "teachingPoints": ["specific teaching point tied to a standard"],
-      "strengths": ["genuine strength"],
+      "teachingPoints": ["2-3 specific actionable points tied to a named standard"],
+      "strengths": ["1-2 genuine strengths"],
       "standardsAddressed": ["W.3.1", "L.3.2"]
     }
   ],
   "smallGroups": [
     {
       "groupName": "string",
-      "focus": "specific instructional focus",
+      "focus": "instructional focus",
       "students": ["student names"],
-      "suggestedActivity": "brief responsive small group activity description"
+      "suggestedActivity": "brief small group activity"
     }
   ],
-  "notionPageUrl": "the URL of the results page you created in Notion"
+  "notionPageUrl": "URL of the results page you created"
 }`;
 
-  const response = await (client.beta.messages as any).create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8096,
-    betas: ['mcp-client-2025-04-04'],
-    mcp_servers: [
-      {
-        type: 'url',
-        url: 'https://mcp.notion.com/mcp',
-        name: 'notion',
-        authorization_token: notionAccessToken,
-      },
-    ],
-    messages: [{ role: 'user', content: prompt }],
-  });
+    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
+    let finalText = '';
 
-  // Find the last text block (Claude's final JSON response after tool use)
-  const textBlock = [...response.content].reverse().find((b: any) => b.type === 'text');
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude');
+    // Agentic tool-use loop
+    while (true) {
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8096,
+        tools: anthropicTools,
+        messages,
+      });
+
+      if (response.stop_reason === 'end_turn') {
+        const textBlock = response.content.find(b => b.type === 'text');
+        if (textBlock?.type === 'text') finalText = textBlock.text;
+        break;
+      }
+
+      if (response.stop_reason === 'tool_use') {
+        messages.push({ role: 'assistant', content: response.content });
+
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        for (const block of response.content) {
+          if (block.type !== 'tool_use') continue;
+          try {
+            const result = await mcpClient.callTool({
+              name: block.name,
+              arguments: block.input as Record<string, unknown>,
+            });
+            const content = (result.content as any[])
+              .map((c: any) => (c.type === 'text' ? c.text : JSON.stringify(c)))
+              .join('\n');
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content });
+          } catch (err: any) {
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: `Error calling ${block.name}: ${err.message}`,
+              is_error: true,
+            });
+          }
+        }
+        messages.push({ role: 'user', content: toolResults });
+      } else {
+        // Unexpected stop reason — bail
+        break;
+      }
+    }
+
+    await mcpClient.close();
+
+    const jsonMatch = finalText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Claude did not return a JSON result');
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    return {
+      gradeLevel,
+      analyzedAt: new Date().toLocaleString(),
+      students: parsed.students,
+      smallGroups: parsed.smallGroups,
+      notionPageUrl: parsed.notionPageUrl,
+    };
+  } finally {
+    mcpProcess.kill();
   }
-
-  const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON found in Claude response');
-
-  const parsed = JSON.parse(jsonMatch[0]);
-
-  return {
-    gradeLevel,
-    analyzedAt: new Date().toLocaleString(),
-    students: parsed.students,
-    smallGroups: parsed.smallGroups,
-    notionPageUrl: parsed.notionPageUrl,
-  };
 }

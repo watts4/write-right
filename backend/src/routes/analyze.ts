@@ -17,7 +17,11 @@ router.post('/', async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await analyzeWritingViaMCP(session.notionAccessToken, session.databaseId, gradeLevel);
+    const result = await analyzeWritingViaMCP(
+      session.notionAccessToken,
+      session.databaseId,
+      gradeLevel
+    );
     res.json(result);
   } catch (err: any) {
     console.error('Analysis error:', err);
