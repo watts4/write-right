@@ -47,7 +47,12 @@ export async function analyzeClass(config: SetupConfig): Promise<AnalysisResult>
   return handleResponse<AnalysisResult>(res)
 }
 
-// Save is now handled automatically by Claude via Notion MCP during analysis
-export async function saveToNotion(_config: SetupConfig, result: AnalysisResult): Promise<AnalysisResult> {
-  return result
+export async function saveToNotion(config: SetupConfig, result: AnalysisResult): Promise<AnalysisResult> {
+  const res = await fetch(`${BASE_URL}/api/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: config.sessionId, result }),
+  })
+  const data = await handleResponse<{ notionPageUrl: string }>(res)
+  return { ...result, notionPageUrl: data.notionPageUrl }
 }
