@@ -69,9 +69,8 @@ export default function AnalysisView({ config, onComplete, onEditSetup }: Props)
         <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <ConfigRow label="Grade Level" value={gradeLabel} />
           <ConfigRow
-            label="Notion Key"
-            value={`${config.notionApiKey.slice(0, 12)}…`}
-            mono
+            label="Notion Session"
+            value={config.sessionId ? 'Connected via OAuth' : 'Not connected'}
           />
           <ConfigRow
             label="Database ID"

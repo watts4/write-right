@@ -1,25 +1,23 @@
 import { Router, Request, Response } from 'express';
-import { getStudentPages } from '../services/notion';
-import { analyzeWriting } from '../services/claude';
-import { AnalyzeRequest } from '../types';
+import { analyzeWritingViaMCP } from '../services/claude';
+import { getSession } from '../services/sessionStore';
 
 const router = Router();
 
 router.post('/', async (req: Request, res: Response) => {
-  const { notionApiKey, databaseId, gradeLevel }: AnalyzeRequest = req.body;
+  const { sessionId, gradeLevel } = req.body;
 
-  if (!notionApiKey || !databaseId || !gradeLevel) {
-    return res.status(400).json({ error: 'Missing required fields: notionApiKey, databaseId, gradeLevel' });
+  if (!sessionId || !gradeLevel) {
+    return res.status(400).json({ error: 'Missing required fields: sessionId, gradeLevel' });
+  }
+
+  const session = getSession(sessionId);
+  if (!session) {
+    return res.status(401).json({ error: 'Session expired or invalid. Please reconnect with Notion.' });
   }
 
   try {
-    const students = await getStudentPages(notionApiKey, databaseId);
-
-    if (students.length === 0) {
-      return res.status(400).json({ error: 'No student writing samples found in the Notion database. Make sure pages have content and the integration is connected.' });
-    }
-
-    const result = await analyzeWriting(students, gradeLevel);
+    const result = await analyzeWritingViaMCP(session.notionAccessToken, session.databaseId, gradeLevel);
     res.json(result);
   } catch (err: any) {
     console.error('Analysis error:', err);

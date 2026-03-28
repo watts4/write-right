@@ -21,8 +21,8 @@ export interface AnalysisResult {
 }
 
 export interface SetupConfig {
-  notionApiKey: string;
-  notionDatabaseId: string;
+  sessionId: string;        // server-side session after Notion OAuth
+  notionDatabaseId: string; // kept for display / seeding reference
   gradeLevel: string;
 }
 

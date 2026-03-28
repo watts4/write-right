@@ -4,7 +4,7 @@ import SetupForm from './components/SetupForm'
 import AnalysisView from './components/AnalysisView'
 import ResultsView from './components/ResultsView'
 
-const STORAGE_KEY = 'writesight_config'
+const STORAGE_KEY = 'writeright_config'
 
 function loadConfig(): SetupConfig | null {
   try {
@@ -22,16 +22,42 @@ function saveConfig(config: SetupConfig) {
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>('setup')
   const [config, setConfig] = useState<SetupConfig>({
-    notionApiKey: '',
+    sessionId: '',
     notionDatabaseId: '',
     gradeLevel: '3',
   })
   const [results, setResults] = useState<AnalysisResult | null>(null)
+  const [oauthError, setOauthError] = useState('')
 
-  // Hydrate config from localStorage on mount and skip to analyze if present
   useEffect(() => {
+    // Handle OAuth callback: ?session=xxx&database_id=xxx
+    const params = new URLSearchParams(window.location.search)
+    const session = params.get('session')
+    const databaseId = params.get('database_id')
+    const error = params.get('oauth_error')
+
+    if (error) {
+      setOauthError(`Notion connection failed: ${error}. Please try again.`)
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+
+    if (session && databaseId) {
+      const gradeLevel = localStorage.getItem('wr_pending_grade') || '3'
+      localStorage.removeItem('wr_pending_grade')
+      localStorage.removeItem('wr_pending_db')
+
+      const cfg: SetupConfig = { sessionId: session, notionDatabaseId: databaseId, gradeLevel }
+      saveConfig(cfg)
+      setConfig(cfg)
+      setScreen('analyze')
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+
+    // Restore from localStorage if available
     const stored = loadConfig()
-    if (stored) {
+    if (stored?.sessionId) {
       setConfig(stored)
       setScreen('analyze')
     }
@@ -90,6 +116,14 @@ export default function App() {
         </div>
       </header>
 
+      {/* OAuth error banner */}
+      {oauthError && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-3 text-sm text-red-700 text-center">
+          {oauthError}
+          <button onClick={() => setOauthError('')} className="ml-3 underline text-red-600">Dismiss</button>
+        </div>
+      )}
+
       {/* Main content */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {screen === 'setup' && (
@@ -146,9 +180,7 @@ function StepIndicator({
       className={`px-2 py-1 rounded text-xs font-medium transition-colors
         ${active ? 'text-brand-700 font-semibold' : done ? 'text-slate-500 hover:text-brand-600 cursor-pointer' : 'text-slate-400 cursor-default'}`}
     >
-      {done && (
-        <span className="mr-1 text-green-500">&#10003;</span>
-      )}
+      {done && <span className="mr-1 text-green-500">&#10003;</span>}
       {label}
     </button>
   )

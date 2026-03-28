@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { SetupConfig } from '../types'
+import { getAuthorizeUrl } from '../api'
 
 const GRADE_OPTIONS = [
   { value: 'K', label: 'Kindergarten' },
@@ -16,33 +17,31 @@ const GRADE_OPTIONS = [
 interface Props {
   initialConfig: SetupConfig
   onSave: (config: SetupConfig) => void
+  isReconnecting?: boolean
 }
 
-export default function SetupForm({ initialConfig, onSave }: Props) {
-  const [form, setForm] = useState<SetupConfig>(initialConfig)
-  const [showKey, setShowKey] = useState(false)
-  const [errors, setErrors] = useState<Partial<Record<keyof SetupConfig, string>>>({})
+export default function SetupForm({ initialConfig, onSave, isReconnecting }: Props) {
+  const [databaseId, setDatabaseId] = useState(initialConfig.notionDatabaseId)
+  const [gradeLevel, setGradeLevel] = useState(initialConfig.gradeLevel || '3')
+  const [dbError, setDbError] = useState('')
 
-  function validate(): boolean {
-    const next: typeof errors = {}
-    if (!form.notionApiKey.trim()) next.notionApiKey = 'Notion API key is required.'
-    else if (!form.notionApiKey.startsWith('secret_') && !form.notionApiKey.startsWith('ntn_')) {
-      next.notionApiKey = 'Key should start with "secret_" or "ntn_".'
+  function handleConnect() {
+    if (!databaseId.trim()) {
+      setDbError('Database ID is required before connecting.')
+      return
     }
-    if (!form.notionDatabaseId.trim()) next.notionDatabaseId = 'Database ID is required.'
-    setErrors(next)
-    return Object.keys(next).length === 0
+    // Save grade level to localStorage so we can restore it after OAuth redirect
+    localStorage.setItem('wr_pending_grade', gradeLevel)
+    localStorage.setItem('wr_pending_db', databaseId)
+    window.location.href = getAuthorizeUrl(databaseId)
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (validate()) onSave(form)
+  // If already connected (has sessionId), allow proceeding directly
+  function handleContinue() {
+    onSave({ ...initialConfig, notionDatabaseId: databaseId, gradeLevel })
   }
 
-  function field(key: keyof SetupConfig, value: string) {
-    setForm(f => ({ ...f, [key]: value }))
-    if (errors[key]) setErrors(e => ({ ...e, [key]: undefined }))
-  }
+  const alreadyConnected = !!initialConfig.sessionId
 
   return (
     <div className="max-w-xl mx-auto">
@@ -56,124 +55,94 @@ export default function SetupForm({ initialConfig, onSave }: Props) {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} noValidate>
-        <div className="card space-y-5">
-          <h2 className="text-base font-semibold text-slate-700 border-b border-slate-100 pb-3">
-            Notion Connection
-          </h2>
+      <div className="card space-y-5">
+        <h2 className="text-base font-semibold text-slate-700 border-b border-slate-100 pb-3">
+          Class Settings
+        </h2>
 
-          {/* API Key */}
-          <div>
-            <label htmlFor="apiKey" className="label">
-              Notion Integration API Key
-            </label>
-            <div className="relative">
-              <input
-                id="apiKey"
-                type={showKey ? 'text' : 'password'}
-                autoComplete="off"
-                placeholder="secret_xxxxxxxxxx"
-                value={form.notionApiKey}
-                onChange={e => field('notionApiKey', e.target.value)}
-                className={`input-field pr-24 font-mono text-xs ${errors.notionApiKey ? 'border-red-400 focus:ring-red-200' : ''}`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 font-medium"
-              >
-                {showKey ? 'Hide' : 'Show'}
-              </button>
-            </div>
-            {errors.notionApiKey ? (
-              <p className="mt-1 text-xs text-red-500">{errors.notionApiKey}</p>
-            ) : (
-              <p className="mt-1 text-xs text-slate-400">
-                Create an integration at{' '}
-                <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">
-                  notion.so/my-integrations
-                </a>
-                , then share your database with it.
-              </p>
-            )}
-          </div>
-
-          {/* Database ID */}
-          <div>
-            <label htmlFor="dbId" className="label">
-              Notion Database ID
-            </label>
-            <input
-              id="dbId"
-              type="text"
-              autoComplete="off"
-              placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-              value={form.notionDatabaseId}
-              onChange={e => field('notionDatabaseId', e.target.value)}
-              className={`input-field font-mono text-xs ${errors.notionDatabaseId ? 'border-red-400 focus:ring-red-200' : ''}`}
-            />
-            {errors.notionDatabaseId ? (
-              <p className="mt-1 text-xs text-red-500">{errors.notionDatabaseId}</p>
-            ) : (
-              <p className="mt-1 text-xs text-slate-400">
-                Found in the database URL: notion.so/your-workspace/<strong>{'<this-part>'}</strong>?v=…
-              </p>
-            )}
-          </div>
-
-          <h2 className="text-base font-semibold text-slate-700 border-b border-slate-100 pb-3 pt-2">
-            Class Settings
-          </h2>
-
-          {/* Grade level */}
-          <div>
-            <label htmlFor="grade" className="label">
-              Grade Level
-            </label>
-            <select
-              id="grade"
-              value={form.gradeLevel}
-              onChange={e => field('gradeLevel', e.target.value)}
-              className="input-field"
-            >
-              {GRADE_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-slate-400">
-              Teaching points and standards references will be anchored to this grade's CCSS benchmarks.
-            </p>
-          </div>
-        </div>
-
-        {/* Info callout */}
-        <div className="mt-4 flex gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-          <InfoIcon />
-          <p>
-            Your API key and database ID are stored only in your browser's localStorage and are
-            never sent anywhere except directly to Notion and this app's local backend.
+        {/* Grade level */}
+        <div>
+          <label htmlFor="grade" className="label">Grade Level</label>
+          <select
+            id="grade"
+            value={gradeLevel}
+            onChange={e => setGradeLevel(e.target.value)}
+            className="input-field"
+          >
+            {GRADE_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-400">
+            Teaching points will be anchored to this grade's California CCSS benchmarks.
           </p>
         </div>
 
-        <div className="mt-6 flex justify-end">
-          <button type="submit" className="btn-primary">
-            Save &amp; Continue
-            <ArrowRightIcon />
-          </button>
+        <h2 className="text-base font-semibold text-slate-700 border-b border-slate-100 pb-3 pt-2">
+          Notion Database
+        </h2>
+
+        {/* Database ID */}
+        <div>
+          <label htmlFor="dbId" className="label">Database ID</label>
+          <input
+            id="dbId"
+            type="text"
+            autoComplete="off"
+            placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            value={databaseId}
+            onChange={e => { setDatabaseId(e.target.value); setDbError('') }}
+            className={`input-field font-mono text-xs ${dbError ? 'border-red-400 focus:ring-red-200' : ''}`}
+          />
+          {dbError ? (
+            <p className="mt-1 text-xs text-red-500">{dbError}</p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-400">
+              Found in the database URL: notion.so/…/<strong>{'<this-32-char-id>'}</strong>?v=…
+            </p>
+          )}
         </div>
-      </form>
+
+        {/* Notion OAuth connection */}
+        <div className="pt-1">
+          {alreadyConnected && !isReconnecting ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+                <CheckIcon />
+                <span>Connected to Notion via OAuth</span>
+              </div>
+              <div className="flex justify-end">
+                <button onClick={handleContinue} className="btn-primary">
+                  Continue to Analysis
+                  <ArrowRightIcon />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500">
+                WriteRight uses Notion's official MCP server to read your student pages and write
+                results back — your data never passes through any intermediate server.
+              </p>
+              <button
+                onClick={handleConnect}
+                className="w-full flex items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+              >
+                <NotionIcon />
+                Connect with Notion
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
 
-function InfoIcon() {
+function CheckIcon() {
   return (
-    <svg className="mt-0.5 shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="12" />
-      <line x1="12" y1="16" x2="12.01" y2="16" />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
     </svg>
   )
 }
@@ -183,6 +152,14 @@ function ArrowRightIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <line x1="5" y1="12" x2="19" y2="12" />
       <polyline points="12 5 19 12 12 19" />
+    </svg>
+  )
+}
+
+function NotionIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
     </svg>
   )
 }

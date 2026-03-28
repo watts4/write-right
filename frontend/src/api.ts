@@ -26,39 +26,28 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
-/**
- * Trigger analysis of the Notion database for the given config.
- * Returns the full AnalysisResult once the backend has processed all entries.
- */
+export function getAuthorizeUrl(databaseId: string): string {
+  return `${BASE_URL}/oauth/authorize?database_id=${encodeURIComponent(databaseId)}`
+}
+
+export async function checkOAuthStatus(sessionId: string): Promise<{ connected: boolean; databaseId?: string }> {
+  const res = await fetch(`${BASE_URL}/oauth/status?session=${encodeURIComponent(sessionId)}`)
+  return handleResponse(res)
+}
+
 export async function analyzeClass(config: SetupConfig): Promise<AnalysisResult> {
   const res = await fetch(`${BASE_URL}/api/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      notionApiKey: config.notionApiKey,
-      notionDatabaseId: config.notionDatabaseId,
+      sessionId: config.sessionId,
       gradeLevel: config.gradeLevel,
     }),
   })
   return handleResponse<AnalysisResult>(res)
 }
 
-/**
- * Save the analysis results as a new Notion page and return the updated
- * AnalysisResult (which will include notionPageUrl).
- */
-export async function saveToNotion(
-  config: SetupConfig,
-  result: AnalysisResult,
-): Promise<AnalysisResult> {
-  const res = await fetch(`${BASE_URL}/api/save`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      notionApiKey: config.notionApiKey,
-      notionDatabaseId: config.notionDatabaseId,
-      result,
-    }),
-  })
-  return handleResponse<AnalysisResult>(res)
+// Save is now handled automatically by Claude via Notion MCP during analysis
+export async function saveToNotion(_config: SetupConfig, result: AnalysisResult): Promise<AnalysisResult> {
+  return result
 }
