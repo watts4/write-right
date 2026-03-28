@@ -102,27 +102,30 @@ Steps:
 
       if (response.stop_reason === 'tool_use') {
         messages.push({ role: 'assistant', content: response.content });
-        const toolResults: Anthropic.ToolResultBlockParam[] = [];
-        for (const block of response.content) {
-          if (block.type !== 'tool_use') continue;
-          try {
-            const result = await mcpClient.callTool({
-              name: block.name,
-              arguments: block.input as Record<string, unknown>,
-            });
-            const content = (result.content as any[])
-              .map((c: any) => (c.type === 'text' ? c.text : JSON.stringify(c)))
-              .join('\n');
-            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content });
-          } catch (err: any) {
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: block.id,
-              content: `Error: ${err.message}`,
-              is_error: true,
-            });
-          }
-        }
+        const toolBlocks = response.content.filter(b => b.type === 'tool_use');
+        // Execute all tool calls in parallel for speed
+        const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+          toolBlocks.map(async (block) => {
+            if (block.type !== 'tool_use') return null as any;
+            try {
+              const result = await mcpClient.callTool({
+                name: block.name,
+                arguments: block.input as Record<string, unknown>,
+              });
+              const content = (result.content as any[])
+                .map((c: any) => (c.type === 'text' ? c.text : JSON.stringify(c)))
+                .join('\n');
+              return { type: 'tool_result' as const, tool_use_id: block.id, content };
+            } catch (err: any) {
+              return {
+                type: 'tool_result' as const,
+                tool_use_id: block.id,
+                content: `Error: ${err.message}`,
+                is_error: true,
+              };
+            }
+          })
+        );
         messages.push({ role: 'user', content: toolResults });
       } else {
         break;

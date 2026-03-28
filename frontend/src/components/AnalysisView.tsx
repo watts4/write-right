@@ -22,24 +22,33 @@ const LOADING_STEPS = [
 export default function AnalysisView({ config, onComplete, onEditSetup }: Props) {
   const [status, setStatus] = useState<Status>('idle')
   const [loadingStep, setLoadingStep] = useState(0)
+  const [elapsed, setElapsed] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
 
   async function runAnalysis() {
     setStatus('loading')
     setErrorMessage('')
     setLoadingStep(0)
+    setElapsed(0)
 
     // Cycle through loading steps for UX feedback
     const interval = setInterval(() => {
       setLoadingStep(prev => Math.min(prev + 1, LOADING_STEPS.length - 1))
     }, 2200)
 
+    // Elapsed time counter so user knows it's still working
+    const timer = setInterval(() => {
+      setElapsed(prev => prev + 1)
+    }, 1000)
+
     try {
       const result = await analyzeClass(config)
       clearInterval(interval)
+      clearInterval(timer)
       onComplete(result)
     } catch (err) {
       clearInterval(interval)
+      clearInterval(timer)
       setStatus('error')
       if (err instanceof ApiError) {
         setErrorMessage(err.message)
@@ -114,7 +123,11 @@ export default function AnalysisView({ config, onComplete, onEditSetup }: Props)
           <Spinner />
           <div className="text-center">
             <p className="text-base font-medium text-slate-700">{LOADING_STEPS[loadingStep]}</p>
-            <p className="text-sm text-slate-400 mt-1">This may take 20–40 seconds depending on class size.</p>
+            <p className="text-sm text-slate-400 mt-1">
+              {elapsed < 30
+                ? 'This may take 1–3 minutes depending on class size.'
+                : `Still working… ${elapsed}s elapsed. Claude is reading ${elapsed < 90 ? 'student pages' : 'and analyzing writing'}.`}
+            </p>
           </div>
           <div className="w-full max-w-xs bg-slate-100 rounded-full h-1.5">
             <div
